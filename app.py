@@ -8,6 +8,7 @@ API_KEY = os.environ.get("API_KEY", "6442851093:tfmX8vto")
 
 
 def validate_key(req):
+    # GET or POST dono se key accept karega
     key = (
         req.headers.get("X-API-KEY")
         or req.args.get("key")
@@ -27,32 +28,45 @@ def detect_type(value):
     if re.fullmatch(r"[^@]+@[^@]+\.[^@]+", value):
         return "email"
 
-    # Username (letters + numbers + _)
+    # Username detection
     if re.fullmatch(r"[A-Za-z0-9_\.]+", value):
         return "username"
 
     return "unknown"
 
 
-@app.route("/leak", methods=["POST"])
+@app.route("/leak", methods=["GET", "POST"])
 def leak_lookup():
-    if not request.is_json:
-        return jsonify({"error": "JSON body required"}), 400
 
-    body = request.get_json()
+    # ----------- GET METHOD SUPPORT -----------
+    if request.method == "GET":
+        lookup_id = request.args.get("id")
 
-    if "id" not in body:
-        return jsonify({"error": "id is required"}), 400
+        if not lookup_id:
+            return jsonify({"error": "id is required"}), 400
 
-    if not validate_key(request):
-        return jsonify({"error": "invalid api key"}), 401
+        if not validate_key(request):
+            return jsonify({"error": "invalid api key"}), 401
 
-    lookup_id = body["id"].strip()
+    # ----------- POST METHOD -----------
+    else:
+        if not request.is_json:
+            return jsonify({"error": "JSON body required"}), 400
 
-    # Detect type
+        body = request.get_json()
+
+        if "id" not in body:
+            return jsonify({"error": "id is required"}), 400
+
+        if not validate_key(request):
+            return jsonify({"error": "invalid api key"}), 401
+
+        lookup_id = body["id"].strip()
+
+    # Detect input type
     dtype = detect_type(lookup_id)
 
-    # Generate response based on type
+    # Build response
     if dtype == "phone":
         info = {
             "type": "phone",
@@ -78,10 +92,7 @@ def leak_lookup():
         }
 
     else:
-        info = {
-            "type": "unknown",
-            "valid": False
-        }
+        info = {"type": "unknown", "valid": False}
 
     return jsonify({
         "success": True,
