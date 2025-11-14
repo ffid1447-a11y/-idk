@@ -1,105 +1,54 @@
 import os
-import re
+import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-API_KEY = os.environ.get("API_KEY", "6442851093:tfmX8vto")
+# === API KEY (UPDATED) ===
+API_KEY = os.environ.get("API_KEY", "6442851093:7ocdcXMi")
 
+LIMIT = 300
+LANG = "ru"
+URL = "https://leakosintapi.com/"
 
-def validate_key(req):
-    # GET or POST dono se key accept karega
-    key = (
-        req.headers.get("X-API-KEY")
-        or req.args.get("key")
-        or (req.json.get("key") if req.is_json else None)
-    )
-    return key == API_KEY
+@app.route("/")
+def home():
+    return {"status": "running"}
 
-
-def detect_type(value):
-    value = value.strip()
-
-    # Phone detection (10–15 digits)
-    if re.fullmatch(r"[0-9]{10,15}", value):
-        return "phone"
-
-    # Email detection
-    if re.fullmatch(r"[^@]+@[^@]+\.[^@]+", value):
-        return "email"
-
-    # Username detection
-    if re.fullmatch(r"[A-Za-z0-9_\.]+", value):
-        return "username"
-
-    return "unknown"
-
-
-@app.route("/leak", methods=["GET", "POST"])
+# === LEAK LOOKUP API (PLAIN JSON) ===
+@app.route("/leak", methods=["GET"])
 def leak_lookup():
+    key = request.args.get("key")
+    query = request.args.get("id")
 
-    # ----------- GET METHOD SUPPORT -----------
-    if request.method == "GET":
-        lookup_id = request.args.get("id")
+    # Validate key
+    if not key:
+        return jsonify({"error": "key required"}), 400
 
-        if not lookup_id:
-            return jsonify({"error": "id is required"}), 400
+    if key != API_KEY:
+        return jsonify({"error": "invalid key"}), 401
 
-        if not validate_key(request):
-            return jsonify({"error": "invalid api key"}), 401
+    # Validate id
+    if not query:
+        return jsonify({"error": "id required"}), 400
 
-    # ----------- POST METHOD -----------
-    else:
-        if not request.is_json:
-            return jsonify({"error": "JSON body required"}), 400
+    payload = {
+        "token": API_KEY,
+        "request": query.strip(),
+        "limit": LIMIT,
+        "lang": LANG
+    }
 
-        body = request.get_json()
+    try:
+        r = requests.post(URL, json=payload, timeout=25)
+        data = r.json()
+    except Exception as e:
+        return jsonify({"error": f"api error: {e}"}), 500
 
-        if "id" not in body:
-            return jsonify({"error": "id is required"}), 400
+    if "Error code" in data:
+        return jsonify({"error": data.get("Error code")}), 400
 
-        if not validate_key(request):
-            return jsonify({"error": "invalid api key"}), 401
-
-        lookup_id = body["id"].strip()
-
-    # Detect input type
-    dtype = detect_type(lookup_id)
-
-    # Build response
-    if dtype == "phone":
-        info = {
-            "type": "phone",
-            "length": len(lookup_id),
-            "formatted": f"+91{lookup_id}" if len(lookup_id) == 10 else lookup_id,
-            "valid": True
-        }
-
-    elif dtype == "email":
-        username, domain = lookup_id.split("@", 1)
-        info = {
-            "type": "email",
-            "username": username,
-            "domain": domain,
-            "valid": True
-        }
-
-    elif dtype == "username":
-        info = {
-            "type": "username",
-            "length": len(lookup_id),
-            "valid": True
-        }
-
-    else:
-        info = {"type": "unknown", "valid": False}
-
-    return jsonify({
-        "success": True,
-        "input": lookup_id,
-        "detected_type": dtype,
-        "data": info
-    }), 200
+    return jsonify(data), 200
 
 
 if __name__ == "__main__":
